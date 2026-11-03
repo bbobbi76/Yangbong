@@ -1,0 +1,5 @@
+requests
+pandas
+finance-datareader
+python-dotenv
+google-genai
