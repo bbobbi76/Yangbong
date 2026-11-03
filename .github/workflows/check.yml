@@ -1,0 +1,18 @@
+# main에 올라가는 코드가 최소한 컴파일·import 되는지 검사 (실제 키·네트워크 검사는 VM 08:50 dry-run이 담당)
+name: check
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -q agent
+      - run: python -c "import agent.aqua, agent.momentum, agent.dart_filter, agent.rebalance, agent.surge"

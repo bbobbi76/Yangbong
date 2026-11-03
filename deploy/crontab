@@ -1,0 +1,4 @@
+# VM에 설치: crontab deploy/crontab 과 같은 내용 (스크립트는 ~/bin 복사본을 씀 — 실행 중 checkout으로 바뀌지 않게)
+50 8 * * 1-5 $HOME/bin/vm_update.sh
+2 9 * * 1-5 $HOME/bin/vm_run.sh surge
+5 9 * * 1-5 $HOME/bin/vm_run.sh rebalance
