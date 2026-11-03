@@ -46,7 +46,7 @@ rebalance는 `c_state.json`의 종목만 팔고, surge는 C 보유 종목을 매
 
 ## 개발 규칙
 
-1. **main에 바로 푸시하지 말고** 개인 브랜치 → PR → 팀원 확인 → main 머지.
+1. main에 바로 푸시해도 된다. 단, 푸시하면 **다음 날 아침부터 실전 매매에 반영**되니 아래 2번 확인은 꼭 하고 올린다.
 2. 머지 전에 로컬에서 반드시 dry-run으로 확인:
    ```
    pip install -r requirements.txt
@@ -56,7 +56,7 @@ rebalance는 `c_state.json`의 종목만 팔고, surge는 C 보유 종목을 매
 3. **로컬에서 `--execute` 금지.** 실전 주문은 VM만 낸다 (두 곳에서 돌면 주문이 중복된다).
 4. 키(`TEAM_CODE`, `DART_KEY`, `GEMINI_KEY`)는 `.env`에만 둔다 (`.env.example` 참고). 코드·커밋·채팅에 붙이지 않는다.
 5. 새 패키지를 쓰면 `requirements.txt`에 추가 (VM이 자동 설치).
-6. 비중·손절폭 같은 숫자는 파일 상단 상수로 두고, 바꾸면 PR 설명에 근거(백테스트 결과)를 적는다.
+6. 비중·손절폭 같은 숫자는 파일 상단 상수로 두고, 바꾸면 커밋 메시지에 근거(백테스트 결과)를 적는다.
 7. 코드 스타일은 기존 파일을 따른다: 한국어 주석, 짧은 함수, 외부 프레임워크 추가 지양.
 
 ## 배포 (자동)
@@ -72,7 +72,7 @@ GCP VM `yangbong-agent` (asia-northeast3-a, 프로젝트 `gen-lang-client-086330
 
 - main 푸시·PR마다 GitHub Actions가 컴파일·import 검사 (`.github/workflows/check.yml`).
 - 장중에 머지한 코드는 **다음 날 08:50**에 반영된다.
-- 되돌림은 "실행이 죽는 코드"만 잡는다. 돌기는 하는데 판단이 틀린 코드(예: 비중 0.8 → 8)는 못 잡으니 PR 리뷰로 막는다.
+- 되돌림은 "실행이 죽는 코드"만 잡는다. 돌기는 하는데 판단이 틀린 코드(예: 비중 0.8 → 8)는 못 잡으니 푸시 전에 diff와 dry-run 결과를 한 번 더 본다.
 - VM 로그 보기: `gcloud compute ssh yangbong-agent --zone=asia-northeast3-a --command="tail -50 ~/Yangbong/agent/logs/$(date +%Y%m%d)_*.log"`
   (VM 접근 권한은 규혁에게 요청)
 
