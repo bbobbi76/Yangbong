@@ -4,14 +4,14 @@ from datetime import date, timedelta
 import pandas as pd
 import FinanceDataReader as fdr
 
+from agent.listing import kospi_common
+
 TOP_N, LOOKBACK, SKIP, MIN_AMOUNT = 30, 120, 5, 5e9
 
 
 def ranked(top_n=TOP_N, lookback=LOOKBACK, skip=SKIP):
     """모멘텀 높은 순으로 정렬한 DataFrame(code, name, mom, amount20). 신호는 전 거래일 종가까지만 사용."""
-    lst = fdr.StockListing("KOSPI")
-    lst = lst[lst["Code"].str.endswith("0")]  # 우선주 제외 (AQuA는 보통주만 거래)
-    lst = lst.sort_values("Marcap", ascending=False).head(top_n)
+    lst = kospi_common().head(top_n)
 
     start = date.today() - timedelta(days=lookback * 2)
     rows = []

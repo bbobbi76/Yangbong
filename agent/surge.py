@@ -10,10 +10,10 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import FinanceDataReader as fdr
 from dotenv import load_dotenv
 
 from agent import dart_filter
+from agent.listing import kospi_common
 from agent.aqua import Aqua, AquaError
 
 STATE = Path(__file__).parent / "state" / "b_state.json"
@@ -32,8 +32,8 @@ def log(msg):
 
 
 def universe():
-    lst = fdr.StockListing("KOSPI")
-    lst = lst[lst["Code"].str.endswith("0")].sort_values("Marcap", ascending=False).head(UNIVERSE_N)
+    lst = kospi_common().head(UNIVERSE_N)
+    lst = lst.dropna(subset=["Changes"])
     # 장 시작 전에 받으면 Close가 곧 전일 종가, 장중이면 Close - Changes
     before_open = datetime.now().strftime("%H:%M") < "09:00"
     prev = lst["Close"] if before_open else lst["Close"] - lst["Changes"]
