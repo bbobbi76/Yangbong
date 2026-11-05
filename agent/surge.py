@@ -32,11 +32,13 @@ def log(msg):
 
 
 def universe():
-    lst = kospi_common().head(UNIVERSE_N)
-    lst = lst.dropna(subset=["Changes"])
-    # 장 시작 전에 받으면 Close가 곧 전일 종가, 장중이면 Close - Changes
-    before_open = datetime.now().strftime("%H:%M") < "09:00"
-    prev = lst["Close"] if before_open else lst["Close"] - lst["Changes"]
+    lst = kospi_common()
+    if lst.attrs["stale"]:
+        raise RuntimeError("오늘 종목 목록이 없어 전일 종가를 알 수 없음 → surge 중단")
+    prev_close = lst.attrs["prev_close"]
+    lst = lst.head(UNIVERSE_N).dropna(subset=["Changes"])
+    # 장 시작 전 데이터면 Close가 곧 전일 종가, 장중에 새로 받은 거면 Close - Changes
+    prev = lst["Close"] if prev_close else lst["Close"] - lst["Changes"]
     return dict(zip(lst["Code"], prev.astype(int))), dict(zip(lst["Code"], lst["Name"]))
 
 
