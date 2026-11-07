@@ -37,8 +37,11 @@ def main():
     args = ap.parse_args()
     load_dotenv()
 
+    api = Aqua() if os.getenv("TEAM_CODE") else None
     state = load_state()
     rank = momentum.ranked()
+    if api is not None:
+        rank = rank[rank["code"].isin(api.symbols())]  # 리츠·인프라펀드 등 AQuA 거래 불가 종목 제외
     names = dict(zip(rank["code"], rank["name"]))
     candidates = list(rank["code"][: args.k * 3])
 
@@ -54,7 +57,6 @@ def main():
     targets = keep + [s for s in candidates if s not in bad and s not in keep][: args.k - len(keep)]
     print(f"{'전체 교체' if full else '유지 + 보충'} → 목표: " + ", ".join(f"{names.get(s, s)}({s})" for s in targets))
 
-    api = Aqua() if os.getenv("TEAM_CODE") else None
     if api is None:
         print("! TEAM_CODE 없음 → 1억 빈 계좌로 가정한 계획만 출력")
         pf = {"totalAssetValue": 100_000_000, "holdings": []}

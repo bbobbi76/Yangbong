@@ -41,10 +41,26 @@ class Aqua:
             return r.json()
         self._check(r)
 
+    def symbols(self):
+        """AQuA에서 거래 가능한 종목 코드 집합 (코스피 보통주. 맥쿼리인프라·리츠 등은 없음)"""
+        return {x["symbol"] for x in self._req("GET", "/api/stocks")["stocks"]}
+
     def prices(self, symbols):
         out = {}
         for i in range(0, len(symbols), 200):  # 한 번에 최대 200개
-            res = self._req("GET", "/api/stocks/price", params={"symbols": ",".join(symbols[i:i + 200])})
+            chunk = list(symbols[i:i + 200])
+            for _ in range(5):
+                try:
+                    res = self._req("GET", "/api/stocks/price", params={"symbols": ",".join(chunk)})
+                    break
+                except AquaError as e:
+                    # 거래 불가 종목 하나 때문에 전체 조회가 실패하지 않게 (11/6 맥쿼리인프라로 surge 하루 공백)
+                    bad = next((s for s in chunk if s in e.message), None)
+                    if e.code != "UNKNOWN_SYMBOL" or bad is None:
+                        raise
+                    chunk.remove(bad)
+            else:
+                raise AquaError(404, "UNKNOWN_SYMBOL", "거래 불가 종목이 너무 많음")
             out.update({x["symbol"]: x["price"] for x in res["result"]})
         return out
 

@@ -45,13 +45,16 @@ def llm_bad(titles):
               "지배구조 불확실성 등)인 공시만 골라라. 판단이 애매하면 악재가 아니다.\n"
               'JSON으로만 답하라: {"bad": [악재 공시의 번호, ...]}\n\n'
               + "\n".join(f"{i}. {t}" for i, t in enumerate(titles)))
-    try:
-        r = client.models.generate_content(model=GEMINI_MODEL, contents=prompt,
-                                           config={"response_mime_type": "application/json"})
-        return {titles[i] for i in json.loads(r.text)["bad"] if 0 <= i < len(titles)}
-    except Exception as e:  # 503 과부하 등 → 키워드 필터만으로 진행
-        print(f"! Gemini 판독 실패, 키워드 필터만 적용: {str(e)[:120]}")
-        return set()
+    for attempt in range(3):  # 503 과부하는 잠깐 뒤 풀리는 경우가 많아 재시도
+        try:
+            r = client.models.generate_content(model=GEMINI_MODEL, contents=prompt,
+                                               config={"response_mime_type": "application/json"})
+            return {titles[i] for i in json.loads(r.text)["bad"] if 0 <= i < len(titles)}
+        except Exception as e:
+            err = e
+            time.sleep(10 * (attempt + 1))
+    print(f"! Gemini 판독 실패, 키워드 필터만 적용: {str(err)[:120]}")
+    return set()
 
 
 def blocked(symbols, days=3):

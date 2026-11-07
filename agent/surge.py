@@ -163,7 +163,8 @@ def main():
 
     api = Aqua()
     prev, names = universe()
-    syms = list(prev)
+    tradable = api.symbols()
+    syms = [s for s in prev if s in tradable]
     pos = load(STATE, {})  # {symbol: {entry, date, qty, ordered_at}}
     log(f"{api.team} 시작, 감시 {len(syms)}종목, 보유 B 포지션 {list(pos)}")
 
