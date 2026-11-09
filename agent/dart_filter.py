@@ -20,9 +20,12 @@ def fetch(days=3, types=("B", "I")):
     for ty in types:
         page = 1
         while True:
-            r = requests.get("https://opendart.fss.or.kr/api/list.json", params=dict(
-                crtfc_key=key, bgn_de=bgn, end_de=end, pblntf_ty=ty,
-                corp_cls="Y", page_no=page, page_count=100), timeout=30).json()
+            try:
+                r = requests.get("https://opendart.fss.or.kr/api/list.json", params=dict(
+                    crtfc_key=key, bgn_de=bgn, end_de=end, pblntf_ty=ty,
+                    corp_cls="Y", page_no=page, page_count=100), timeout=30).json()
+            except requests.RequestException as e:  # 예외 메시지의 URL에 키가 들어 있어 유형만 남김
+                raise RuntimeError(f"DART 조회 실패: {type(e).__name__}") from None
             if r["status"] == "013":  # 조회된 데이터 없음
                 break
             if r["status"] != "000":

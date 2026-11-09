@@ -19,7 +19,10 @@ REBAL_DAYS = 20
 
 
 def load_state():
-    return json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {"targets": [], "rebalanced": None}
+    state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {"targets": [], "rebalanced": None}
+    state.setdefault("pending_sell", [])  # 목표에서 빠졌지만 아직 다 못 판 종목
+    state.setdefault("short", {})         # 지난 매수에서 덜 체결된 수량 {symbol: 수량}
+    return state
 
 
 def trading_days_since(d):
@@ -63,34 +66,46 @@ def main():
         px = {s: int(momentum.fdr.DataReader(s).iloc[-1]["Close"]) for s in targets}
     else:
         pf = api.portfolio()
-        px = api.prices(sorted(set(targets) | set(state["targets"])))
+        px = api.prices(sorted(set(targets) | set(state["targets"]) | set(state["pending_sell"])))
     held = {h["symbol"]: h["availableQuantity"] for h in pf["holdings"]}
 
     per = pf["totalAssetValue"] * args.weight / args.k
-    plan = [(s, "SELL", held[s]) for s in state["targets"] if s not in targets and held.get(s)]
+    gone = [s for s in dict.fromkeys(state["targets"] + state["pending_sell"]) if s not in targets]
+    plan = [(s, "SELL", held[s]) for s in gone if held.get(s)]
     for s in targets:
         diff = int(per // px[s]) - held.get(s, 0)
         # 월중에는 기존 보유분 비중 조정을 하지 않음 (매매비용·쿨다운 절약). 새로 들어온 종목만 매수
         if diff > 0 and (full or held.get(s, 0) == 0):
             plan.append((s, "BUY", diff))
+        elif diff > 0 and s in state["short"]:  # 지난번 덜 체결된 수량만 채움
+            plan.append((s, "BUY", min(diff, state["short"][s])))
         elif diff < 0 and full:
             plan.append((s, "SELL", -diff))
     plan.sort(key=lambda x: x[1] != "SELL")  # 매도 먼저 해서 현금 확보
 
+    sold, short = {}, {}
     for s, side, q in plan:
         line = f"  {side:4} {names.get(s, s)}({s}) {q}주 ≈ {q * px[s]:,.0f}원"
         if not args.execute or api is None:
             print(line + " [dry-run]")
             continue
+        filled = 0
         try:
             r = api.order(s, side, q)  # 시장가: 지금 호가 잔량만큼 체결, 남는 수량은 버림
-            print(line + f" → {r['status']} {r['filledQuantity']}주 @ {r['executedPrice']}")
+            filled = r["filledQuantity"]
+            print(line + f" → {r['status']} {filled}주 @ {r['executedPrice']}")
         except AquaError as e:
             print(line + f" → 실패 {e}")
+        if side == "SELL":
+            sold[s] = sold.get(s, 0) + filled
+        elif filled < q:
+            short[s] = q - filled
 
     if args.execute and api is not None:
         STATE.parent.mkdir(exist_ok=True)
-        STATE.write_text(json.dumps({"targets": targets,
+        # 주문이 실패했거나 일부만 체결된 종목은 다음 실행에서 이어서 처리
+        pending = [s for s in gone if s in held and (held[s] == 0 or sold.get(s, 0) < held[s])]
+        STATE.write_text(json.dumps({"targets": targets, "pending_sell": pending, "short": short,
                                      "rebalanced": date.today().isoformat() if full else state["rebalanced"]},
                                     ensure_ascii=False, indent=2), encoding="utf-8")
 

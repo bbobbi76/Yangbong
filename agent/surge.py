@@ -87,9 +87,10 @@ def llm_confirm(name, title, cache):
         "이 공시가 자사주 취득, 수주(단일판매·공급계약), 실적 호전, 신규시설투자 등 주가 상승을 뒷받침하는 "
         "실질적 호재라면 YES, 단순 정정·일상 안내·악재·희석 공시라면 NO만 답하세요."
     )
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     try:
-        r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=8)
+        r = requests.post(url, headers={"x-goog-api-key": api_key},  # URL에 넣으면 예외 메시지로 로그에 키가 남음
+                          json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=8)
         ans = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip().upper()
         ok = "YES" in ans
     except Exception as e:
@@ -213,7 +214,8 @@ def main():
 
         # 3) 장중 진입 (09:15 ~ 14:20): +10% 도달 & 당일 양봉 지지 & DART 호재 공시
         if ENTRY_FROM <= now <= ENTRY_UNTIL and len(pos) < MAX_POS:
-            c_held = set(load(C_STATE, {"targets": []}).get("targets", []))
+            c_state = load(C_STATE, {"targets": []})
+            c_held = set(c_state.get("targets", [])) | set(c_state.get("pending_sell", []))
             hits = [
                 s for s in syms
                 if s in px and px[s] >= prev[s] * (1 + TRIGGER)
