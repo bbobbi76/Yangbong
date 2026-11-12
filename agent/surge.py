@@ -21,6 +21,9 @@ STATE = Path(__file__).parent / "state" / "b_state.json"
 C_STATE = Path(__file__).parent / "state" / "c_state.json"
 UNIVERSE_N = 200          # AQuA 시세 일괄 조회 한도(200종목)에 맞춘 시총 상위 200 보통주
 TRIGGER, STOP = 0.10, -0.05
+# 진입 상한: 백테스트는 +10% 도달 순간 진입. +20% 도달 후 진입(Case 4)은 손절 66.7%로 부적합 판정이라
+# 이미 +15%를 넘긴 종목은 쫓지 않는다 (11/10 NHN +29.5% 진입 → 손절)
+MAX_CHG = 0.15
 BUDGET, MAX_POS = 0.20, 3  # 총자산의 20%를 최대 3종목에 분할
 # 09:05 C 리밸런싱 및 개장 직후(09:00~09:15) 윗꼬리 변동성 회피, 14:50 음봉 청산 전 30분 쿨다운 확보를 위해 14:20 진입 마감
 ENTRY_FROM, ENTRY_UNTIL, CLOSE_CHECK = "09:15", "14:20", "14:50"
@@ -32,8 +35,8 @@ GOOD_KEYWORDS = [
     "자기주식취득", "자기주식 취득", "자사주", "신탁계약체결",
     "단일판매", "공급계약", "수주",
     "영업(잠정)실적", "잠정실적", "매출액또는손익구조",
-    "신규시설투자", "특허권취득", "기술이전", "현금ㆍ현물배당",
-]
+    "신규시설투자", "특허권취득", "기술이전",
+]  # 배당 기준일 공시는 백테스트 호재 유형이 아니라 뺐다 (11/10 두산 -9.7%)
 NEG_KEYWORDS = ["기재정정", "정정", "철회", "해지", "중단", "취소"]
 
 
@@ -218,7 +221,7 @@ def main():
             c_held = set(c_state.get("targets", [])) | set(c_state.get("pending_sell", []))
             hits = [
                 s for s in syms
-                if s in px and px[s] >= prev[s] * (1 + TRIGGER)
+                if s in px and prev[s] * (1 + TRIGGER) <= px[s] <= prev[s] * (1 + MAX_CHG)
                 and s not in pos and s not in tried and s not in c_held
             ]
             if hits:

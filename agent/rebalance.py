@@ -55,7 +55,9 @@ def main():
     for s, why in bad.items():
         print(f"  제외 {names.get(s, s)}({s}): {why}")
 
-    full = args.force or trading_days_since(state["rebalanced"]) >= REBAL_DAYS
+    # 종목 선정 기준(momentum.SIGNAL)이 바뀌었으면 기다리지 않고 바로 전체 교체
+    full = (args.force or state.get("signal", "mom") != momentum.SIGNAL
+            or trading_days_since(state["rebalanced"]) >= REBAL_DAYS)
     keep = [] if full else [s for s in state["targets"] if s not in bad]
     targets = keep + [s for s in candidates if s not in bad and s not in keep][: args.k - len(keep)]
     print(f"{'전체 교체' if full else '유지 + 보충'} → 목표: " + ", ".join(f"{names.get(s, s)}({s})" for s in targets))
@@ -106,6 +108,7 @@ def main():
         # 주문이 실패했거나 일부만 체결된 종목은 다음 실행에서 이어서 처리
         pending = [s for s in gone if s in held and (held[s] == 0 or sold.get(s, 0) < held[s])]
         STATE.write_text(json.dumps({"targets": targets, "pending_sell": pending, "short": short,
+                                     "signal": momentum.SIGNAL,
                                      "rebalanced": date.today().isoformat() if full else state["rebalanced"]},
                                     ensure_ascii=False, indent=2), encoding="utf-8")
 
