@@ -33,7 +33,11 @@ class Aqua:
     def _req(self, method, path, **kw):
         # 분당 100회 초과(RATE_LIMIT_EXCEEDED)만 Retry-After 만큼 쉬고 재시도, 나머지 에러는 그대로 올림
         for _ in range(3):
-            r = self.s.request(method, f"{BASE}{path}", timeout=15, **kw)
+            try:
+                r = self.s.request(method, f"{BASE}{path}", timeout=15, **kw)
+            except requests.RequestException as e:
+                # 서버 접속 장애도 AquaError로 올려서 surge 루프가 죽지 않고 다음 주기에 재시도하게 (11/9 접속 타임아웃으로 종료)
+                raise AquaError(0, "NETWORK", type(e).__name__) from None
             if r.status_code == 429 and "RATE_LIMIT" in r.text:
                 time.sleep(int(r.headers.get("Retry-After", 10)))
                 continue
