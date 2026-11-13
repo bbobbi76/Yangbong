@@ -35,7 +35,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--execute", action="store_true")
     ap.add_argument("--k", type=int, default=5)
-    ap.add_argument("--weight", type=float, default=0.8, help="총자산 중 C에 쓸 비중 (나머지는 B용 현금)")
+    ap.add_argument("--weight", type=float, default=0.9, help="총자산 중 C에 쓸 비중 (나머지는 B용 현금). 11/16부터 0.8 → 0.9")
     ap.add_argument("--force", action="store_true", help="20거래일이 안 돼도 전체 교체")
     args = ap.parse_args()
     load_dotenv()

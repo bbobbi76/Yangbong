@@ -24,7 +24,12 @@ TRIGGER, STOP = 0.10, -0.05
 # 진입 상한: 백테스트는 +10% 도달 순간 진입. +20% 도달 후 진입(Case 4)은 손절 66.7%로 부적합 판정이라
 # 이미 +15%를 넘긴 종목은 쫓지 않는다 (11/10 NHN +29.5% 진입 → 손절)
 MAX_CHG = 0.15
-BUDGET, MAX_POS = 0.20, 3  # 총자산의 20%를 최대 3종목에 분할
+# 11/16부터 20% → 10%: 조정장(26.10~11) 재현 백테스트에서 건당 +0.2% 수준으로 본전에 가까워
+# 남는 비중을 기본 포트폴리오로 옮겼다 (research/surge_exit_result.md)
+BUDGET, MAX_POS = 0.10, 2  # 총자산의 10%를 최대 2종목에 분할
+# 수익 보호: 보유 중 최고가가 진입가 +10%를 넘었으면, 진입가 +3% 아래로 내려올 때 판다
+# (11/13 케이씨텍 장중 +20% → 익절 규칙 없음. 재현 백테스트에서 강세장 비용 거의 없고 조정장 +0.36%p)
+LOCK_AT, LOCK_FLOOR = 0.10, 0.03
 # 09:05 C 리밸런싱 및 개장 직후(09:00~09:15) 윗꼬리 변동성 회피, 14:50 음봉 청산 전 30분 쿨다운 확보를 위해 14:20 진입 마감
 ENTRY_FROM, ENTRY_UNTIL, CLOSE_CHECK = "09:15", "14:20", "14:50"
 COOLDOWN_SEC = 30 * 60    # AQuA 규칙: 동일 종목 주문 후 30분간 매수·매도 불가 (429 SYMBOL_COOLDOWN)
@@ -105,6 +110,16 @@ def llm_confirm(name, title, cache):
 
 def load(path, default):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+
+
+def intraday_exit(p, price):
+    """장중 언제든 파는 조건. 손절 또는 수익 보호 사유, 아니면 None"""
+    entry, peak = p["entry"], p.get("peak", p["entry"])
+    if price <= entry * (1 + STOP):
+        return f"손절 {price / entry - 1:+.1%}"
+    if peak >= entry * (1 + LOCK_AT) and price <= entry * (1 + LOCK_FLOOR):
+        return f"수익 보호 (최고 {peak / entry - 1:+.1%} → 현재 {price / entry - 1:+.1%})"
+    return None
 
 
 def save(pos):
@@ -190,10 +205,17 @@ def main():
             time.sleep(POLL_SEC)
             continue
 
-        # 1) 상시 손절: 최초 진입가 대비 -5% 이하 (30분 쿨다운 경과 종목만 실행)
+        # 1) 상시 손절: 최초 진입가 대비 -5% 이하 / 수익 보호: 최고 +10% 이상 갔다가 +3% 아래로 (30분 쿨다운 경과 종목만)
         for s, p in list(pos.items()):
-            if s in px and px[s] <= p["entry"] * (1 + STOP) and can_order(p):
-                sell(api, s, p["qty"], f"손절 {px[s] / p['entry'] - 1:+.1%}", args.execute, pos, names)
+            if s not in px:
+                continue
+            if px[s] > p.get("peak", p["entry"]):
+                p["peak"] = px[s]
+                if args.execute:
+                    save(pos)
+            why = intraday_exit(p, px[s])
+            if why and can_order(p):
+                sell(api, s, p["qty"], why, args.execute, pos, names)
 
         # 2) 14:50 이후 당일 음봉(현재가 < 시가) 종가 청산 및 최대 보유일(15일) 만료 청산
         if now >= CLOSE_CHECK:
