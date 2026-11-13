@@ -4,6 +4,9 @@ import time
 import requests
 
 BASE = os.getenv("AQUA_BASE", "http://136.119.248.78")
+# 매수 한 건이 총자산의 이 비율을 넘으면 보내지 않는다 (버그로 엉뚱하게 큰 주문 방지).
+# 정상 주문은 기본 포트폴리오 한 종목 약 18%(90% ÷ 5), 급등주 한 종목 5%라 걸리지 않는다.
+MAX_ORDER_RATIO = 0.25
 
 
 class AquaError(Exception):
@@ -75,10 +78,19 @@ class Aqua:
         return self._req("GET", f"/api/stocks/{symbol}/orderbook")
 
     def order(self, symbol, side, quantity, price=None):
+        if side == "BUY":  # 매도는 막지 않는다 (많이 오른 종목을 못 파는 일이 없게)
+            self._check_size(symbol, side, quantity, price)
         body = {"symbol": symbol, "order_code": side, "quantity": int(quantity)}
         if price is not None:
             body["price"] = int(price)
         return self._req("POST", "/api/orders", json=body)
+
+    def _check_size(self, symbol, side, quantity, price):
+        est = int(quantity) * (price or self.prices([symbol])[symbol])
+        total = self.portfolio()["totalAssetValue"]
+        if est > total * MAX_ORDER_RATIO:
+            raise AquaError(0, "ORDER_TOO_LARGE",
+                            f"{symbol} {side} {int(quantity)}주 ≈ {est:,.0f}원이 총자산의 {MAX_ORDER_RATIO:.0%}({total * MAX_ORDER_RATIO:,.0f}원) 초과 → 주문 안 함")
 
     def cancel(self, order_id):
         return self._req("DELETE", f"/api/orders/{order_id}")

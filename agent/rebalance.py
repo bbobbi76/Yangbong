@@ -18,6 +18,12 @@ STATE = Path(__file__).parent / "state" / "c_state.json"  # C가 관리하는 �
 REBAL_DAYS = 20
 
 
+def too_many_sells(plan, held_targets, full):
+    """전체 교체일이 아닌데 보유 종목의 절반 넘게 팔려고 하면 True (악재 공시 판정 오류 등으로 한꺼번에 파는 것 방지)"""
+    sells = {s for s, side, _ in plan if side == "SELL"}
+    return not full and len(sells) > max(1, len(held_targets) // 2)
+
+
 def load_state():
     state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {"targets": [], "rebalanced": None}
     state.setdefault("pending_sell", [])  # 목표에서 빠졌지만 아직 다 못 판 종목
@@ -84,6 +90,9 @@ def main():
         elif diff < 0 and full:
             plan.append((s, "SELL", -diff))
     plan.sort(key=lambda x: x[1] != "SELL")  # 매도 먼저 해서 현금 확보
+    if too_many_sells(plan, [s for s in state["targets"] if held.get(s)], full):
+        print(f"!!! 전체 교체일이 아닌데 {sum(x[1] == 'SELL' for x in plan)}종목을 팔려고 함 → 오늘 주문 전부 중단, 로그 확인 필요")
+        plan = []
 
     sold, short = {}, {}
     for s, side, q in plan:
