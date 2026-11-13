@@ -14,7 +14,7 @@ ChatGPT처럼 저장소를 직접 못 읽는 도구는 이 파일 내용을 대�
 | --- | --- | --- | --- |
 | A. DART 공시 이벤트 | 임규혁 | 악재 공시 종목 매수 금지 필터 (키워드 + Gemini 판독 = NLP 파트) | `agent/dart_filter.py` |
 | B. +10% 급등 + 호재 공시 | 김형민 | 총자산 10%, 최대 2종목 단기 매매 (11/16부터, 이전 20%·3종목). +10~15%에서만 진입, 최고 +10% 갔다 +3% 아래면 매도 (`research/surge_exit_result.md`) | `agent/surge.py` |
-| C. 대형주 6개월 모멘텀 | 이은겸 | 총자산 90% (11/16부터, 이전 80%), 시총 상위 30 중 상위 5 보유. **11/16부터 정렬 기준을 고변동성(60일)으로 변경** (`research/short_horizon_result.md`) | `agent/momentum.py`, `agent/rebalance.py` |
+| C. 대형주 6개월 모멘텀 | 이은겸 | 총자산 80%, 시총 상위 30 중. **11/16부터 모멘텀 상위 5 + 60일 저변동성 상위 5 반반 (10종목, 은겸 제안·팀 합의)** | `agent/momentum.py`, `agent/rebalance.py` |
 
 ## AQuA 규칙 (코드가 반드시 지켜야 함)
 
