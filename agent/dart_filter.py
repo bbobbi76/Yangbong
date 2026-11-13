@@ -4,12 +4,16 @@ import os
 import json
 import time
 from datetime import date, timedelta
+from pathlib import Path
 import requests
 
 # 제목에 이 단어가 있으면 LLM 없이 바로 제외
 BAD_KEYWORDS = ["유상증자", "전환사채", "신주인수권부사채", "교환사채", "합병", "분할", "주식소각", "감자",
                 "공급계약", "횡령", "배임", "소송", "거래정지", "관리종목", "불성실공시", "회생", "부도"]
 GEMINI_MODEL = "gemini-2.5-flash"
+# 제목별 Gemini 판정 저장. 08:50 검사 때 판독한 결과를 09:05 실매매에서 그대로 쓴다
+# (09:05엔 Gemini 503이 잦아 판정이 엇갈렸다: 11/6 08:50엔 KT&G 제외, 09:05엔 매수)
+LLM_CACHE = Path(__file__).parent / "state" / "llm_verdicts.json"
 
 
 def fetch(days=3, types=("B", "I")):
@@ -39,7 +43,25 @@ def fetch(days=3, types=("B", "I")):
 
 
 def llm_bad(titles):
-    """키워드에 안 걸린 공시 제목을 Gemini가 판독. 악재로 본 제목 집합을 반환 (키 없으면 빈 집합)"""
+    """키워드에 안 걸린 공시 제목을 Gemini가 판독. 악재로 본 제목 집합을 반환 (키 없으면 빈 집합).
+    한 번 판독한 제목은 저장해 두고 다시 묻지 않는다."""
+    cache = json.loads(LLM_CACHE.read_text(encoding="utf-8")) if LLM_CACHE.exists() else {}
+    known = {t for t in titles if t in cache}
+    bad = {t for t in known if cache[t]}
+    new = [t for t in titles if t not in known]
+    if known:
+        print(f"  Gemini 판정 저장본 사용 {len(known)}건, 새로 판독 {len(new)}건")
+    found = _ask_gemini(new)
+    if found is None:
+        return bad
+    cache.update({t: t in found for t in new})
+    LLM_CACHE.parent.mkdir(exist_ok=True)
+    LLM_CACHE.write_text(json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8")
+    return bad | found
+
+
+def _ask_gemini(titles):
+    """악재로 본 제목 집합. 실패하면 None (저장하지 않음)"""
     if not titles or not os.getenv("GEMINI_KEY"):
         return set()
     from google import genai
@@ -57,7 +79,7 @@ def llm_bad(titles):
             err = e
             time.sleep(10 * (attempt + 1))
     print(f"! Gemini 판독 실패, 키워드 필터만 적용: {str(err)[:120]}")
-    return set()
+    return None
 
 
 def blocked(symbols, days=3):
