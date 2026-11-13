@@ -65,7 +65,7 @@ GCP VM `yangbong-agent` (asia-northeast3-a, 프로젝트 `gen-lang-client-086330
 
 | 시각 (평일) | 동작 |
 | --- | --- |
-| 08:50 | `deploy/vm_update.sh`: main 최신 커밋을 받아 컴파일 + import + rebalance dry-run 검사. **실패하면 마지막 통과 커밋으로 자동 되돌림** |
+| 08:50 | `deploy/vm_update.sh`: main 최신 커밋을 받아 컴파일 + import + rebalance dry-run 검사 (실패 시 1분 뒤 재검사). **그래도 실패하면 마지막 통과 커밋으로 자동 되돌림**. `momentum.py`·`rebalance.py`가 지난번과 다르면 **그날 09:05에 전체 교체** |
 | 09:02 | `surge` 시작 (15:00 종료) |
 | 09:05 | `rebalance` 실행 |
 | 11/30 15:30 | VM 자동 종료 |
