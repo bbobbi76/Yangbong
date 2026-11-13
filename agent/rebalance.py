@@ -41,7 +41,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--execute", action="store_true")
     ap.add_argument("--k", type=int, default=5)
-    ap.add_argument("--weight", type=float, default=0.8, help="총자산 중 C에 쓸 비중 (은겸 백테스트 주식 80%%, 급등주 10%%, 현금 10%%)")
+    ap.add_argument("--weight", type=float, default=0.8, help="총자산 중 C에 쓸 비중 (나머지는 B용 현금)")
     ap.add_argument("--force", action="store_true", help="20거래일이 안 돼도 전체 교체")
     args = ap.parse_args()
     load_dotenv()
@@ -52,28 +52,18 @@ def main():
     if api is not None:
         rank = rank[rank["code"].isin(api.symbols())]  # 리츠·인프라펀드 등 AQuA 거래 불가 종목 제외
     names = dict(zip(rank["code"], rank["name"]))
-    orders = [o for _, o in momentum.groups(rank)]
-    n = args.k * len(orders)  # 총 보유 종목 수 (반반이면 10)
-    # 그룹 순서를 번갈아 합친 후보 (월중 보충용): 모멘텀1, 저변동1, 모멘텀2, 저변동2, ...
-    candidates = list(dict.fromkeys(s for tier in zip(*orders) for s in tier))
+    candidates = list(rank["code"][: args.k * 3])
 
-    check = sorted({s for o in orders for s in o[: args.k * 3]} | set(state["targets"]))
+    check = sorted(set(candidates) | set(state["targets"]))
     bad = dart_filter.blocked(check) if os.getenv("DART_KEY") else {}
     if not os.getenv("DART_KEY"):
         print("! DART_KEY 없음 → 공시 필터 생략")
     for s, why in bad.items():
         print(f"  제외 {names.get(s, s)}({s}): {why}")
 
-    # 종목 선정 기준(momentum.SIGNAL)이 바뀌었으면 기다리지 않고 바로 전체 교체
-    full = (args.force or state.get("signal", "mom") != momentum.SIGNAL
-            or trading_days_since(state["rebalanced"]) >= REBAL_DAYS)
-    if full:  # 그룹마다 악재 없는 상위 k개씩 (겹치면 다음 순위)
-        targets = []
-        for o in orders:
-            targets += [s for s in o if s not in bad and s not in targets][: args.k]
-    else:
-        keep = [s for s in state["targets"] if s not in bad]
-        targets = keep + [s for s in candidates if s not in bad and s not in keep][: n - len(keep)]
+    full = args.force or trading_days_since(state["rebalanced"]) >= REBAL_DAYS
+    keep = [] if full else [s for s in state["targets"] if s not in bad]
+    targets = keep + [s for s in candidates if s not in bad and s not in keep][: args.k - len(keep)]
     print(f"{'전체 교체' if full else '유지 + 보충'} → 목표: " + ", ".join(f"{names.get(s, s)}({s})" for s in targets))
 
     if api is None:
@@ -85,7 +75,7 @@ def main():
         px = api.prices(sorted(set(targets) | set(state["targets"]) | set(state["pending_sell"])))
     held = {h["symbol"]: h["availableQuantity"] for h in pf["holdings"]}
 
-    per = pf["totalAssetValue"] * args.weight / n
+    per = pf["totalAssetValue"] * args.weight / args.k
     gone = [s for s in dict.fromkeys(state["targets"] + state["pending_sell"]) if s not in targets]
     plan = [(s, "SELL", held[s]) for s in gone if held.get(s)]
     for s in targets:
@@ -125,7 +115,6 @@ def main():
         # 주문이 실패했거나 일부만 체결된 종목은 다음 실행에서 이어서 처리
         pending = [s for s in gone if s in held and (held[s] == 0 or sold.get(s, 0) < held[s])]
         STATE.write_text(json.dumps({"targets": targets, "pending_sell": pending, "short": short,
-                                     "signal": momentum.SIGNAL,
                                      "rebalanced": date.today().isoformat() if full else state["rebalanced"]},
                                     ensure_ascii=False, indent=2), encoding="utf-8")
 
