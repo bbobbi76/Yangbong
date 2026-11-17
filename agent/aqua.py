@@ -101,5 +101,8 @@ class Aqua:
     def limit(self):
         return self._req("GET", "/api/orders/limit")
 
+    def leaderboard(self):
+        return self._req("GET", "/api/leaderboard")
+
     def portfolio(self):
         return self._req("GET", "/api/portfolio")
