@@ -10,6 +10,9 @@ import requests
 # 제목에 이 단어가 있으면 LLM 없이 바로 제외
 BAD_KEYWORDS = ["유상증자", "전환사채", "신주인수권부사채", "교환사채", "합병", "분할", "주식소각", "감자",
                 "공급계약", "횡령", "배임", "소송", "거래정지", "관리종목", "불성실공시", "회생", "부도"]
+# 대형주(시총 상위 30)에서는 악재가 아니었던 키워드. 9거래일 KODEX 대비: 키워드 없음 -0.85%, 공급계약 -0.39%(97건),
+# 주식소각 -0.49%(54건) — research/filter_largecap_test.py. 기본 포트폴리오에서만 이 키워드로 거르지 않는다.
+LARGECAP_OK = ("공급계약", "주식소각")
 GEMINI_MODEL = "gemini-2.5-flash"
 # 제목별 Gemini 판정 저장. 08:50 검사 때 판독한 결과를 09:05 실매매에서 그대로 쓴다
 # (09:05엔 Gemini 503이 잦아 판정이 엇갈렸다: 11/6 08:50엔 KT&G 제외, 09:05엔 매수)
@@ -82,13 +85,14 @@ def _ask_gemini(titles):
     return None
 
 
-def blocked(symbols, days=3):
-    """symbols 중 최근 공시 때문에 보유·매수하면 안 되는 종목 → {symbol: 사유}"""
+def blocked(symbols, days=3, allow=()):
+    """symbols 중 최근 공시 때문에 보유·매수하면 안 되는 종목 → {symbol: 사유}. allow 키워드는 거르지 않는다."""
     symbols = set(symbols)
+    keywords = [k for k in BAD_KEYWORDS if k not in allow]
     disc = [d for d in fetch(days) if d["stock_code"] in symbols]
     out, rest = {}, []
     for d in disc:
-        kw = next((k for k in BAD_KEYWORDS if k in d["report_nm"]), None)
+        kw = next((k for k in keywords if k in d["report_nm"]), None)
         if kw:
             out[d["stock_code"]] = f"{d['report_nm']} [키워드: {kw}]"
         else:
