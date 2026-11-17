@@ -14,6 +14,8 @@ BAD_KEYWORDS = ["유상증자", "전환사채", "신주인수권부사채", "교
 # 주식소각 -0.49%(54건) — research/filter_largecap_test.py. 기본 포트폴리오에서만 이 키워드로 거르지 않는다.
 LARGECAP_OK = ("공급계약", "주식소각")
 GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_FALLBACK = "gemini-flash-latest"  # 마지막 재시도는 다른 모델로 (같은 모델 503이 길게 이어질 때)
+GEMINI_TIMEOUT_MS = 60_000  # 응답 없이 멈추면 09:05 리밸런스까지 멈추므로 시간 제한
 # 제목별 Gemini 판정 저장. 08:50 검사 때 판독한 결과를 09:05 실매매에서 그대로 쓴다
 # (09:05엔 Gemini 503이 잦아 판정이 엇갈렸다: 11/6 08:50엔 KT&G 제외, 09:05엔 매수)
 LLM_CACHE = Path(__file__).parent / "state" / "llm_verdicts.json"
@@ -68,14 +70,14 @@ def _ask_gemini(titles):
     if not titles or not os.getenv("GEMINI_KEY"):
         return set()
     from google import genai
-    client = genai.Client(api_key=os.environ["GEMINI_KEY"].strip())
+    client = genai.Client(api_key=os.environ["GEMINI_KEY"].strip(), http_options={"timeout": GEMINI_TIMEOUT_MS})
     prompt = ("다음은 코스피 상장사 DART 공시 제목 목록이다. 향후 며칠간 주가에 악재(희석, 재무 악화, 법적 리스크, "
               "지배구조 불확실성 등)인 공시만 골라라. 판단이 애매하면 악재가 아니다.\n"
               'JSON으로만 답하라: {"bad": [악재 공시의 번호, ...]}\n\n'
               + "\n".join(f"{i}. {t}" for i, t in enumerate(titles)))
-    for attempt in range(3):  # 503 과부하는 잠깐 뒤 풀리는 경우가 많아 재시도
+    for attempt, model in enumerate((GEMINI_MODEL, GEMINI_MODEL, GEMINI_FALLBACK)):  # 503 과부하는 잠깐 뒤 풀리는 경우가 많아 재시도
         try:
-            r = client.models.generate_content(model=GEMINI_MODEL, contents=prompt,
+            r = client.models.generate_content(model=model, contents=prompt,
                                                config={"response_mime_type": "application/json"})
             return {titles[i] for i in json.loads(r.text)["bad"] if 0 <= i < len(titles)}
         except Exception as e:
