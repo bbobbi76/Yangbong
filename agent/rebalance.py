@@ -120,14 +120,22 @@ def main():
     api = Aqua() if os.getenv("TEAM_CODE") else None
     state = load_state()
     locked, defense = state.get("locked", False), state.get("defense", False)
-    if api is not None and not locked:
-        mine, best, bench = standing(api)
+    try:  # 리더보드 조회가 일시적으로 실패해도 리밸런스는 진행 (굳히기·안전선 판단만 이번엔 건너뜀)
+        lb = standing(api) if api is not None and not locked else None
+    except (AquaError, StopIteration, KeyError, ValueError) as e:
+        print(f"! 리더보드 조회 실패 → 이번 실행은 굳히기·안전선 판단 생략: {e}")
+        lb = None
+    if lb is not None:
+        mine, best, bench = lb
         print(f"  우리 {mine:+.2f}% / 다른 팀 최고 {best:+.2f}% / KODEX 200 {bench:+.2f}% "
               f"(1위 굳히기 {LOCK_MARGIN}%p, 안전선 {GUARD_GAP}%p)")
         locked = mine - best >= LOCK_MARGIN
         if not defense and not args.lock_only:  # 안전선은 하루 1회(09:05)만 검증했으므로 장중에는 보지 않는다
             defense = mine - bench < GUARD_GAP
     if args.lock_only and not (locked and (state["targets"] or state["pending_sell"])):
+        if locked and not state.get("locked") and args.execute:  # 팔 C 종목이 없어도 굳힘 표시는 남겨 급등주 진입을 멈춘다
+            STATE.parent.mkdir(exist_ok=True)
+            STATE.write_text(json.dumps({**state, "locked": True}, ensure_ascii=False, indent=2), encoding="utf-8")
         return
 
     if locked:
