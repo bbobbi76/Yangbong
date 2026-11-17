@@ -66,7 +66,9 @@ def trading_days_since(d):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--execute", action="store_true")
-    ap.add_argument("--k", type=int, default=5)
+    # 11/18부터 4종목: 남은 9거래일 재생에서 하락 국면 1위 확률 14% → 21%, 앞·뒤 기간 모두 같은 경향
+    # (3종목은 지수 아래 추락 10%로 너무 위험). research/model_tests_result.md
+    ap.add_argument("--k", type=int, default=4)
     ap.add_argument("--weight", type=float, default=0.95,
                     help="총자산 중 C에 쓸 비중. 11/19부터 0.95 (급등주 자리는 대부분 비어 있어 노는 현금을 줄임)")
     ap.add_argument("--force", action="store_true", help="20거래일이 안 돼도 전체 교체")
