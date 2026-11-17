@@ -2,3 +2,5 @@
 50 8 * * 1-5 $HOME/bin/vm_update.sh
 2 9 * * 1-5 $HOME/bin/vm_run.sh surge
 5 9 * * 1-5 $HOME/bin/vm_run.sh rebalance
+# 1위 굳히기 확인: 다른 팀 최고보다 2%p 앞서면 C 전량 현금화 (조건 안 되면 리더보드 1회 조회만)
+0,30 10-14 * * 1-5 $HOME/bin/vm_run.sh rebalance --lock-only

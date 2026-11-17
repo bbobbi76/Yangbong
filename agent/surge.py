@@ -238,8 +238,9 @@ def main():
                     close_checked.add(s)
 
         # 3) 장중 진입 (09:15 ~ 14:20): +10% 도달 & 당일 양봉 지지 & DART 호재 공시
-        if ENTRY_FROM <= now <= ENTRY_UNTIL and len(pos) < MAX_POS:
-            c_state = load(C_STATE, {"targets": []})
+        c_state = load(C_STATE, {"targets": []})
+        # 1위 굳히기(rebalance.LOCK_MARGIN)로 현금 전환했으면 새 진입 안 함. 보유 포지션 청산 규칙은 그대로
+        if ENTRY_FROM <= now <= ENTRY_UNTIL and len(pos) < MAX_POS and not c_state.get("locked"):
             c_held = set(c_state.get("targets", [])) | set(c_state.get("pending_sell", []))
             hits = [
                 s for s in syms

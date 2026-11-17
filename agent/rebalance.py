@@ -21,13 +21,18 @@ REBAL_DAYS = 20
 # 고변동성 종목이 지수보다 크게 빠져 코스피 200 아래로 내려가는 걸 막기 위한 장치.
 GUARD_GAP = 3.0
 INDEX_N, INDEX_CAP = 10, 0.20  # 지수 추종: 시총 상위 10종목을 시총 비중으로, 한 종목 최대 20%
+# 1위 굳히기: 다른 팀 최고 수익률보다 이만큼(%p) 앞서면 C 종목을 모두 팔고 남은 기간 현금 유지 (되돌리지 않음).
+# 11/18 상위 3팀이 거의 현금(+0.23 / 0.00 / -0.21%)이라 앞선 상태로 현금이 되면 1위가 유지된다.
+# 남은 9거래일 재생: 1위 확률 21% → 25% (최근 절반 27% → 34%), 지수 아래 추락 1.2% 그대로 (research/lock_test.py)
+LOCK_MARGIN = 2.0
 
 
-def index_gap(api):
-    """리더보드 기준 우리 팀 수익률 - KODEX 200 수익률 (%p)"""
+def standing(api):
+    """리더보드 기준 (우리 팀 수익률, 다른 팀 최고 수익률, KODEX 200 수익률) %"""
     lb = api.leaderboard()
     me = next(r for r in lb["rankings"] if r["teamName"] == api.team)
-    return me["totalReturnRate"] - lb["baseline"]["totalReturnRate"]
+    others = [r["totalReturnRate"] for r in lb["rankings"] if r["teamName"] != api.team]
+    return me["totalReturnRate"], max(others, default=-100.0), lb["baseline"]["totalReturnRate"]
 
 
 def index_weights(codes, marcap):
@@ -63,32 +68,13 @@ def trading_days_since(d):
     return len(fdr.DataReader("069500", d)) - 1  # KODEX 200 일봉 수로 거래일 계산
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--execute", action="store_true")
-    # 11/18부터 4종목: 남은 9거래일 재생에서 하락 국면 1위 확률 14% → 21%, 앞·뒤 기간 모두 같은 경향
-    # (3종목은 지수 아래 추락 10%로 너무 위험). research/model_tests_result.md
-    ap.add_argument("--k", type=int, default=4)
-    ap.add_argument("--weight", type=float, default=0.95,
-                    help="총자산 중 C에 쓸 비중. 11/19부터 0.95 (급등주 자리는 대부분 비어 있어 노는 현금을 줄임)")
-    ap.add_argument("--force", action="store_true", help="20거래일이 안 돼도 전체 교체")
-    args = ap.parse_args()
-    load_dotenv()
-
-    api = Aqua() if os.getenv("TEAM_CODE") else None
-    state = load_state()
+def choose(api, state, defense, args):
+    """오늘 C 목표 종목과 비중. (signal, targets, weights, full, names)"""
     rank = momentum.ranked()
     if api is not None:
         rank = rank[rank["code"].isin(api.symbols())]  # 리츠·인프라펀드 등 AQuA 거래 불가 종목 제외
     names = dict(zip(rank["code"], rank["name"]))
     candidates = list(rank["code"][: args.k * 3])
-
-    # 지수 대비 안전선 확인 (한 번 걸리면 대회 끝까지 지수 추종)
-    defense = state.get("defense", False)
-    if api is not None and not defense:
-        gap = index_gap(api)
-        print(f"  KODEX 200 대비 {gap:+.2f}%p (안전선 {GUARD_GAP}%p)")
-        defense = gap < GUARD_GAP
     signal = "index" if defense else momentum.SIGNAL
     if defense:
         lst = kospi_common()
@@ -114,6 +100,45 @@ def main():
     targets = keep + [s for s in candidates if s not in bad and s not in keep][: n - len(keep)]
     weights = index_weights(targets, marcap) if defense else {s: 1 / len(targets) for s in targets}
     print(f"{'전체 교체' if full else '유지 + 보충'} → 목표: " + ", ".join(f"{names.get(s, s)}({s})" for s in targets))
+
+    return signal, targets, weights, full, names
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--execute", action="store_true")
+    # 11/18부터 4종목: 남은 9거래일 재생에서 하락 국면 1위 확률 14% → 21%, 앞·뒤 기간 모두 같은 경향
+    # (3종목은 지수 아래 추락 10%로 너무 위험). research/model_tests_result.md
+    ap.add_argument("--k", type=int, default=4)
+    ap.add_argument("--weight", type=float, default=0.95,
+                    help="총자산 중 C에 쓸 비중. 11/19부터 0.95 (급등주 자리는 대부분 비어 있어 노는 현금을 줄임)")
+    ap.add_argument("--force", action="store_true", help="20거래일이 안 돼도 전체 교체")
+    ap.add_argument("--lock-only", action="store_true", help="장중 cron: 1위 굳히기 조건만 확인, 안 되면 아무것도 안 함")
+    args = ap.parse_args()
+    load_dotenv()
+
+    api = Aqua() if os.getenv("TEAM_CODE") else None
+    state = load_state()
+    locked, defense = state.get("locked", False), state.get("defense", False)
+    if api is not None and not locked:
+        mine, best, bench = standing(api)
+        print(f"  우리 {mine:+.2f}% / 다른 팀 최고 {best:+.2f}% / KODEX 200 {bench:+.2f}% "
+              f"(1위 굳히기 {LOCK_MARGIN}%p, 안전선 {GUARD_GAP}%p)")
+        locked = mine - best >= LOCK_MARGIN
+        if not defense and not args.lock_only:  # 안전선은 하루 1회(09:05)만 검증했으므로 장중에는 보지 않는다
+            defense = mine - bench < GUARD_GAP
+    if args.lock_only and not (locked and (state["targets"] or state["pending_sell"])):
+        return
+
+    if locked:
+        print(f"!!! 다른 팀 최고보다 {LOCK_MARGIN}%p 이상 앞섬 → C 전량 현금화, 남은 기간 현금 유지")
+        try:  # 종목명은 로그용. 목록을 못 받아도 매도는 진행
+            names = dict(zip(*[kospi_common()[c] for c in ("Code", "Name")]))
+        except Exception:
+            names = {}
+        signal, targets, weights, full = "cash", [], {}, True
+    else:
+        signal, targets, weights, full, names = choose(api, state, defense, args)
 
     if api is None:
         print("! TEAM_CODE 없음 → 1억 빈 계좌로 가정한 계획만 출력")
@@ -164,7 +189,7 @@ def main():
         # 주문이 실패했거나 일부만 체결된 종목은 다음 실행에서 이어서 처리
         pending = [s for s in gone if s in held and (held[s] == 0 or sold.get(s, 0) < held[s])]
         STATE.write_text(json.dumps({"targets": targets, "pending_sell": pending, "short": short,
-                                     "signal": signal, "defense": defense,
+                                     "signal": signal, "defense": defense, "locked": locked,
                                      "rebalanced": date.today().isoformat() if full else state["rebalanced"]},
                                     ensure_ascii=False, indent=2), encoding="utf-8")
 
