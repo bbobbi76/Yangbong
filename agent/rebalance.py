@@ -86,7 +86,7 @@ def choose(api, state, defense, args):
         print("!!! 지수 대비 안전선 아래 → 남은 기간 지수 추종(시총 상위 10, 시총 비중)")
 
     check = sorted(set(candidates) | set(state["targets"]))
-    bad = dart_filter.blocked(check, allow=dart_filter.LARGECAP_OK) if os.getenv("DART_KEY") else {}
+    bad = dart_filter.blocked(check, allow=dart_filter.LARGECAP_OK, llm_block=False) if os.getenv("DART_KEY") else {}
     if not os.getenv("DART_KEY"):
         print("! DART_KEY 없음 → 공시 필터 생략")
     for s, why in bad.items():

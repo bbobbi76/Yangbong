@@ -13,6 +13,8 @@ BAD_KEYWORDS = ["유상증자", "전환사채", "신주인수권부사채", "교
 # 대형주(시총 상위 30)에서는 악재가 아니었던 키워드. 9거래일 KODEX 대비: 키워드 없음 -0.85%, 공급계약 -0.39%(97건),
 # 주식소각 -0.49%(54건) — research/filter_largecap_test.py. 기본 포트폴리오에서만 이 키워드로 거르지 않는다.
 LARGECAP_OK = ("공급계약", "주식소각")
+# Gemini가 악재로 본 대형주 공시(키워드 미해당 166건)는 9거래일 KODEX 대비 +0.63%로 나머지(-1.02%)보다 오히려 나았다.
+# gemini-3.5-flash도 +1.01%(98건)로 같음 → 기본 포트폴리오에선 LLM 판정으로 팔지 않는다 (research/llm_judge_test.py)
 GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_FALLBACK = "gemini-flash-latest"  # 마지막 재시도는 다른 모델로 (같은 모델 503이 길게 이어질 때)
 GEMINI_TIMEOUT_MS = 60_000  # 응답 없이 멈추면 09:05 리밸런스까지 멈추므로 시간 제한
@@ -87,8 +89,9 @@ def _ask_gemini(titles):
     return None
 
 
-def blocked(symbols, days=3, allow=()):
-    """symbols 중 최근 공시 때문에 보유·매수하면 안 되는 종목 → {symbol: 사유}. allow 키워드는 거르지 않는다."""
+def blocked(symbols, days=3, allow=(), llm_block=True):
+    """symbols 중 최근 공시 때문에 보유·매수하면 안 되는 종목 → {symbol: 사유}. allow 키워드는 거르지 않는다.
+    llm_block=False면 Gemini 판정은 로그로만 남기고 거르지 않는다 (대형주: research/llm_judge_test.py)"""
     symbols = set(symbols)
     keywords = [k for k in BAD_KEYWORDS if k not in allow]
     disc = [d for d in fetch(days) if d["stock_code"] in symbols]
@@ -102,7 +105,10 @@ def blocked(symbols, days=3, allow=()):
     bad_titles = llm_bad(sorted({d["report_nm"] for d in rest}))
     for d in rest:
         if d["report_nm"] in bad_titles and d["stock_code"] not in out:
-            out[d["stock_code"]] = f"{d['report_nm']} [LLM 악재]"
+            if llm_block:
+                out[d["stock_code"]] = f"{d['report_nm']} [LLM 악재]"
+            else:
+                print(f"  참고 {d['stock_code']}: {d['report_nm']} [LLM 악재, 대형주라 거르지 않음]")
     return out
 
 
