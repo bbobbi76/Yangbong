@@ -16,7 +16,12 @@ sys.path.insert(0, sys.argv[1])
 from agent.listing import kospi_common
 from model import Kronos, KronosTokenizer, KronosPredictor
 
-HOLD, COST, W, CTX, STEP, SAMPLES = 9, 0.0023, 0.95, 200, 3, 5
+#   추가 인자: [시작일 간격 보유일 종목수]  예) python research/kronos_test.py <경로> 2025-06-01 6 6 4
+START = sys.argv[2] if len(sys.argv) > 2 else "2024-01-01"
+STEP = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+HOLD = int(sys.argv[4]) if len(sys.argv) > 4 else 9
+K = int(sys.argv[5]) if len(sys.argv) > 5 else 5
+COST, W, CTX, SAMPLES = 0.0023, 0.95, 200, 5
 TARGET = (1 + 0.0023) / (1 - 0.0807) - 1
 BENCH = "069500"
 torch.manual_seed(0)
@@ -34,7 +39,7 @@ model = Kronos.from_pretrained("NeoQuasar/Kronos-small")
 pred = KronosPredictor(model, tok, device="cpu", max_context=512)
 
 rows, dates = [], close.index
-for t in range(dates.searchsorted(pd.Timestamp("2024-01-01")), len(dates) - HOLD, STEP):
+for t in range(dates.searchsorted(pd.Timestamp(START)), len(dates) - HOLD, STEP):
     day = dates[t]
     ok, dfs, xs, ys = [], [], [], []
     for c in names:
@@ -50,10 +55,11 @@ for t in range(dates.searchsorted(pd.Timestamp("2024-01-01")), len(dates) - HOLD
     out = pred.predict_batch(dfs, xs, ys, pred_len=HOLD, T=1.0, top_p=0.9, sample_count=SAMPLES, verbose=False)
     exp = {c: float(o["close"].iloc[-1]) / close[c].loc[day] - 1 for c, o in zip(ok, out)}
     vol = {c: ret[c].iloc[t - 59: t + 1].std() for c in ok}
-    top = lambda dct: sorted(dct, key=dct.get, reverse=True)[:5]
+    top = lambda dct: sorted(dct, key=dct.get, reverse=True)[:K]
     bench = close[BENCH].iloc[t + HOLD] / close[BENCH].iloc[t] - 1
     below = close[BENCH].iloc[t] <= close[BENCH].iloc[t - 59: t + 1].mean()
-    for name, picks in {"고변동성 상위5 (현재)": top(vol), "Kronos 예측 수익 상위5": top(exp)}.items():
+    for name, picks in {f"고변동성 상위{K} (현재)": top(vol), f"Kronos 예측 수익 상위{K}": top(exp),
+                        f"고변동성 상위{K*2} 중 Kronos 상위{K}": top({c: exp[c] for c in sorted(vol, key=vol.get, reverse=True)[:K * 2]})}.items():
         g = W * (np.mean([close[c].iloc[t + HOLD] / close[c].iloc[t] - 1 for c in picks]) - COST)
         rows.append(dict(date=day, strategy=name, ret=g, excess=g - bench, below=below))
     print(f"{day:%Y-%m-%d}", end=" ", flush=True)
