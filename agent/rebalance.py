@@ -5,7 +5,7 @@
 import argparse
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import FinanceDataReader as fdr
@@ -25,6 +25,10 @@ INDEX_N, INDEX_CAP = 10, 0.20  # 지수 추종: 시총 상위 10종목을 시총
 # 11/18 상위 3팀이 거의 현금(+0.23 / 0.00 / -0.21%)이라 앞선 상태로 현금이 되면 1위가 유지된다.
 # 남은 9거래일 재생: 1위 확률 21% → 25% (최근 절반 27% → 34%), 지수 아래 추락 1.2% 그대로 (research/lock_test.py)
 LOCK_MARGIN = 2.0
+# 안전선은 장 마감 직전(14:30 --lock-only 실행)에만 판단하고 걸리면 그 자리에서 지수 추종으로 바꾼다.
+# 11/20 09:05엔 장 시작 직후 리더보드(KODEX 값 지연, 1위 팀 0.00%)로 판단해 앞선 폭이 1.0%p로 잘못 잡혔다.
+# 백테스트도 하루 종가 기준 판단이다 (research/guard_test.py, restart_test.py).
+GUARD_CHECK_FROM = "14:25"
 
 
 def standing(api):
@@ -120,6 +124,7 @@ def main():
     api = Aqua() if os.getenv("TEAM_CODE") else None
     state = load_state()
     locked, defense = state.get("locked", False), state.get("defense", False)
+    guard_now = False  # 이번 실행에서 안전선이 새로 걸렸나 (14:30 실행에서만)
     try:  # 리더보드 조회가 일시적으로 실패해도 리밸런스는 진행 (굳히기·안전선 판단만 이번엔 건너뜀)
         lb = standing(api) if api is not None and not locked else None
     except (AquaError, StopIteration, KeyError, ValueError) as e:
@@ -130,9 +135,9 @@ def main():
         print(f"  우리 {mine:+.2f}% / 다른 팀 최고 {best:+.2f}% / KODEX 200 {bench:+.2f}% "
               f"(1위 굳히기 {LOCK_MARGIN}%p, 안전선 {GUARD_GAP}%p)")
         locked = mine - best >= LOCK_MARGIN
-        if not defense and not args.lock_only:  # 안전선은 하루 1회(09:05)만 검증했으므로 장중에는 보지 않는다
-            defense = mine - bench < GUARD_GAP
-    if args.lock_only and not (locked and (state["targets"] or state["pending_sell"])):
+        if not defense and args.lock_only and datetime.now().strftime("%H:%M") >= GUARD_CHECK_FROM:
+            defense = guard_now = mine - bench < GUARD_GAP
+    if args.lock_only and not guard_now and not (locked and (state["targets"] or state["pending_sell"])):
         if locked and not state.get("locked") and args.execute:  # 팔 C 종목이 없어도 굳힘 표시는 남겨 급등주 진입을 멈춘다
             STATE.parent.mkdir(exist_ok=True)
             STATE.write_text(json.dumps({**state, "locked": True}, ensure_ascii=False, indent=2), encoding="utf-8")
