@@ -24,12 +24,9 @@ INDEX_N, INDEX_CAP = 10, 0.20  # 지수 추종: 시총 상위 10종목을 시총
 # 1위 굳히기: 다른 팀 최고 수익률보다 이만큼(%p) 앞서면 C 종목을 모두 팔고 남은 기간 현금 유지 (되돌리지 않음).
 # 11/18 상위 3팀이 거의 현금(+0.23 / 0.00 / -0.21%)이라 앞선 상태로 현금이 되면 1위가 유지된다.
 # 남은 9거래일 재생: 1위 확률 21% → 25% (최근 절반 27% → 34%), 지수 아래 추락 1.2% 그대로 (research/lock_test.py)
-LOCK_MARGIN = 2.0
-# 순위 굳히기 (11/30 마지막 날용): 우리가 HOLD_RANK위 이내이고 바로 아래 팀보다 HOLD_MARGIN(%p) 이상 앞서면
-# 1위 굳히기와 똑같이 C 전량 현금화. 11/27 마감 4위 AITrader -6.22% / 우리 -6.50%(5위)로 0.28%p 차.
-# 백테스트 근거 없음 — 팀 결정(규혁): 4위를 충분히 앞서면 지킨다. 아래 팀은 현금화 뒤에도 움직이므로
-# 남은 몇 시간 장중 변동을 감안해 1.5%p. 09:05 리더보드는 값이 늦게 갱신돼(11/20) 장중 --lock-only에서만 판단.
-HOLD_RANK, HOLD_MARGIN = 4, 1.5
+# 11/30 마지막 날: 2.0 → 0.5. 순위 점수가 5·4·3·2·1점이라 1위를 노린다 (팀 결정, 규혁).
+# 1위 팀이 현금(0.00%)이라 0.5%p만 앞서도 현금화하면 1위가 거의 확정된다. 백테스트 근거 없음.
+LOCK_MARGIN = 0.5
 # 안전선은 장 마감 직전(14:30 --lock-only 실행)에만 판단하고 걸리면 그 자리에서 지수 추종으로 바꾼다.
 # 11/20 09:05엔 장 시작 직후 리더보드(KODEX 값 지연, 1위 팀 0.00%)로 판단해 앞선 폭이 1.0%p로 잘못 잡혔다.
 # 백테스트도 하루 종가 기준 판단이다 (research/guard_test.py, restart_test.py).
@@ -42,13 +39,6 @@ def standing(api):
     me = next(r for r in lb["rankings"] if r["teamName"] == api.team)
     others = [r["totalReturnRate"] for r in lb["rankings"] if r["teamName"] != api.team]
     return me["totalReturnRate"], others, lb["baseline"]["totalReturnRate"]
-
-
-def hold_rank(mine, others):
-    """HOLD_RANK위 이내이고 바로 아래 팀보다 HOLD_MARGIN 이상 앞서면 True (같은 수익률 팀은 앞선 것으로 침)"""
-    below = [r for r in others if r < mine]
-    ahead = len(others) - len(below)
-    return ahead < HOLD_RANK and bool(below) and mine - max(below) >= HOLD_MARGIN
 
 
 def index_weights(codes, marcap):
@@ -125,7 +115,9 @@ def main():
     ap.add_argument("--execute", action="store_true")
     # 11/18부터 4종목: 남은 9거래일 재생에서 하락 국면 1위 확률 14% → 21%, 앞·뒤 기간 모두 같은 경향
     # (3종목은 지수 아래 추락 10%로 너무 위험). research/model_tests_result.md
-    ap.add_argument("--k", type=int, default=4)
+    # 11/30 마지막 날만 2종목: 5위(꼴찌)라 순위가 더 떨어질 곳이 없고, 4위와 0.28%p 차라 4위 확률은 종목 수와 거의 무관.
+    # 변동성을 키워 1위(+7% 필요) 확률을 올린다. KODEX 대비 +9%p라 지수 아래 추락은 14:30 안전선이 막는다.
+    ap.add_argument("--k", type=int, default=2)
     ap.add_argument("--weight", type=float, default=0.95,
                     help="총자산 중 C에 쓸 비중. 11/19부터 0.95 (급등주 자리는 대부분 비어 있어 노는 현금을 줄임)")
     ap.add_argument("--force", action="store_true", help="20거래일이 안 돼도 전체 교체")
@@ -146,11 +138,8 @@ def main():
         mine, others, bench = lb
         best = max(others, default=-100.0)
         print(f"  우리 {mine:+.2f}% / 다른 팀 최고 {best:+.2f}% / KODEX 200 {bench:+.2f}% "
-              f"(1위 굳히기 {LOCK_MARGIN}%p, {HOLD_RANK}위 굳히기 {HOLD_MARGIN}%p, 안전선 {GUARD_GAP}%p)")
-        held_rank = args.lock_only and hold_rank(mine, others)
-        if held_rank:
-            print(f"!!! {HOLD_RANK}위 이내이고 바로 아래 팀보다 {HOLD_MARGIN}%p 이상 앞섬 → 순위 굳히기")
-        locked = mine - best >= LOCK_MARGIN or held_rank
+              f"(1위 굳히기 {LOCK_MARGIN}%p, 안전선 {GUARD_GAP}%p)")
+        locked = mine - best >= LOCK_MARGIN
         if not defense and args.lock_only and datetime.now().strftime("%H:%M") >= GUARD_CHECK_FROM:
             defense = guard_now = mine - bench < GUARD_GAP
     if args.lock_only and not guard_now and not (locked and (state["targets"] or state["pending_sell"])):
@@ -160,7 +149,7 @@ def main():
         return
 
     if locked:
-        print("!!! 굳히기 조건 충족 → C 전량 현금화, 남은 기간 현금 유지")
+        print(f"!!! 다른 팀 최고보다 {LOCK_MARGIN}%p 이상 앞섬 → C 전량 현금화, 남은 기간 현금 유지")
         try:  # 종목명은 로그용. 목록을 못 받아도 매도는 진행
             names = dict(zip(*[kospi_common()[c] for c in ("Code", "Name")]))
         except Exception:

@@ -14,7 +14,7 @@ ChatGPT처럼 저장소를 직접 못 읽는 도구는 이 파일 내용을 대�
 | --- | --- | --- | --- |
 | A. DART 공시 이벤트 | 임규혁 | 악재 공시 종목 매수 금지 필터 (키워드 + Gemini 판독 = NLP 파트). 대형주(C)에선 Gemini 판정은 로그만 (`research/model_tests_result.md` 6절) | `agent/dart_filter.py` |
 | B. +10% 급등 + 호재 공시 | 김형민 | 총자산 10%, 최대 2종목 단기 매매 (11/16부터, 이전 20%·3종목). +10~15%에서만 진입, 최고 +10% 갔다 +3% 아래면 매도 (`research/surge_exit_result.md`) | `agent/surge.py` |
-| C. 대형주 6개월 모멘텀 | 이은겸 | 총자산 95%, 시총 상위 30 중 상위 4 보유. **11/18부터 60일 고변동성 기준**, KODEX 대비 +3%p 아래면 지수 추종 전환, 다른 팀 최고보다 2%p 앞서면 전량 현금으로 1위 굳히기 (`research/model_tests_result.md`) | `agent/momentum.py`, `agent/rebalance.py` |
+| C. 대형주 6개월 모멘텀 | 이은겸 | 총자산 95%, 시총 상위 30 중 상위 4 보유 (**11/30 마지막 날만 2종목**). **11/18부터 60일 고변동성 기준**, KODEX 대비 +3%p 아래면 지수 추종 전환, 다른 팀 최고보다 2%p(**11/30은 0.5%p**) 앞서면 전량 현금으로 1위 굳히기 (`research/model_tests_result.md`) | `agent/momentum.py`, `agent/rebalance.py` |
 
 ## AQuA 규칙 (코드가 반드시 지켜야 함)
 
@@ -68,7 +68,7 @@ GCP VM `yangbong-agent` (asia-northeast3-a, 프로젝트 `gen-lang-client-086330
 | 08:50 | `deploy/vm_update.sh`: main 최신 커밋을 받아 컴파일 + import + rebalance dry-run 검사 (실패 시 1분 뒤 재검사). **그래도 실패하면 마지막 통과 커밋으로 자동 되돌림**. `momentum.py`·`rebalance.py`가 지난번과 다르면 **그날 09:05에 전체 교체** |
 | 09:02 | `surge` 시작 (15:00 종료) |
 | 09:05 | `rebalance` 실행 |
-| 10:00~14:30 (30분마다) | `rebalance --lock-only`: 1위 굳히기 조건만 확인 (다른 팀 최고 +2%p 이상이면 C 전량 매도) |
+| 10:00~14:30 (30분마다) | `rebalance --lock-only`: 1위 굳히기 조건만 확인 (다른 팀 최고 +0.5%p 이상이면 C 전량 매도) |
 | 11/30 15:30 | VM 자동 종료 |
 
 - main 푸시·PR마다 GitHub Actions가 컴파일·import 검사 (`.github/workflows/check.yml`).
